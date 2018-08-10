@@ -1,0 +1,512 @@
+---
+title: "Multivariate Analysis of House prices"
+subtitle: "Real Estate Analysts"
+output:
+  word_document: default
+  html_document: default
+  pdf_document: default
+---
+
+###Introduction
+
+**Objective and Data Set Description:**
+
+The dataset has 79 explanatory variables and 1460 observations, describing (almost) every aspect of residential homes (dimensions, neighborhoods, sale prices etc.) in Ames, Iowa. The data set is multivariate where the final dimensions will be selected afterwards by reducing. Predicting the final price of each home is also possible with this data set using regression.
+
+For details of variable the link to the data set is below:
+https://www.kaggle.com/c/house-prices-advanced-regression-techniques/data
+
+**Motivation: To address following Business Questions:**
+
+  1. Dimensionality reduction using PCA and Factor analysis.
+  2. Clustering on the data set to find the clusters of different types houses. For improved price assessment and marketing based on differnet classes of houses identified.
+  3. Predicting the house prices in Ames,Iowa using regression model and principle component regression.
+
+**Variable of our analysis and their descriptions (16 variables):**
+
+
+  1. LotArea      :Lot size in square feet
+  2. MasVnrArea   :Masonry veneer area in square feet
+  3. BsmtFinSF1   :Basement type 1 finished square feet
+  4. BsmtUnfSF    :Unfinished square feet of basement area
+  5. TotalBsmtSF  :Total square feet of basement area
+  6. X1stFlrSF    :First Floor square feet
+  7. X2ndFlrSF    :Second floor square feet
+  8. GrLivArea    :Above grade (ground) living area square feet
+  9. BsmtFullBath :Basement full bathrooms
+  10. FullBath     :Full bathrooms above grade
+  11. BedroomAbvGr :Number of bedrooms above basement level
+  12. KitchenAbvGr :Number of kitchens
+  13. TotRmsAbvGrd :Total rooms above grade (does not include bathrooms)
+  14. GarageArea   :Size of garage in square feet
+  15. WoodDeckSF   :Wood deck area in square feet
+  16. OpenPorchSF  :Open porch area in square feet
+
+***
+
+###Data Preprocessing and Cleaning
+
+We have narrowed our data set to 16 variables. For further dimension reduction and missing value analysis we are going to do correlation analysis and visualization as below:
+
+**a) Import data set into R environment  **
+
+
+```{r, message=FALSE, warning=FALSE}
+#data cleaning
+Housing<-read.csv("C:/Education/Multivariate Analysis/Project/Housing/Data/Full_Housing_New.csv")
+Housing<-Housing[,-c(1,18)] #Excluding ID and SalePrice
+str(Housing)
+```
+
+We have imported the complete data set (training and test) and excluded the ID and SalePrice variables, for the purpose of further multivariate analysis.
+
+**b) Dealing with Missing Values in Original data set.  **
+
+Let us observe our data set for missing values as follows:
+
+```{r}
+sum(is.na(Housing)) #Count NA values across variables
+sapply(Housing, function(x) sum(is.na(x)))# number of nas
+```
+
+We observe 29 NA values in our dataset. Considering these missing values to be completely random, we replace/impute these values with their respective column mean values.
+
+```{r}
+imp<-apply(Housing,2,mean,na.rm= T)
+house<- Housing
+for(i in 1:ncol(Housing)){
+  house[is.na(house[,i]),i]<-imp[i]
+}
+sapply(house, function(x) sum(is.na(x)))#imputing nas with col means
+#str(house)
+```
+
+**c) Correlation analysis**
+
+Let us observe the correlations between the variables of our dataset, as we understand that there needs to be correlation between the variables for proceeding with the multivariate analysis.
+
+```{r correlolgram, message=FALSE, warning=FALSE, fig.align="center", fig.height=7, fig.width=9}
+library(corrplot)
+corrplot(cor(house), method="color", addCoef.col = "black", 
+         tl.col="black", tl.cex=0.6, number.cex=0.6)
+```
+
+From the above corellelogram, we observe weak correlation of following variables with rest of the variables:
+
+1. KitchenAbvGrd
+2. WoodDeckSF
+3. OpenPorchSF
+4. LotArea
+
+Let us confirm the same from further correlation visualizations.
+
+```{r, message=FALSE, warning=FALSE, fig.align="center"}
+library(ResourceSelection)
+#str(house)
+#dim(house)
+#cor(house)#correltion matrix
+kdepairs(house[,1:6])
+kdepairs(house[,6:11])
+kdepairs(house[,13:16])##12 is the kitchen above the garage . most of the values 1 or 2 , so it acts as binary variable
+#multivariate normality check
+```
+
+From the above visualizations, we confirm that the 3 variables above mentioned express weak correlation with the rest of the variables and hence we exclude them from further multivariate analysis.
+
+```{r}
+#New dataset
+house.new<-house[,-c(1,12,15,16)]
+str(house.new)
+```
+
+** d) Outlier Analysis ** 
+
+In the previous visualizations we observe outliers in the dataset. Here we attempt to identify and exclude the outliers using the Mahalanobis distances.
+
+We perform our outlier analysis, considering only the training dataset. Also, we perform scaling to standardize the range of independent variables.
+
+```{r}
+house.new <- house.new[1:1460,] #Train data
+house.scale<- scale(house.new)
+#head(house.scale)
+summary(house.scale)
+#str(house.scale)
+```
+
+From the above summary we observe that the max values of most variables even after scaling are above value 3, i.e. we notice significant outliers in the dataset. Following we visualize the distances of observations using the Chi-plot.
+
+**Chi-Plot**
+
+```{r, message=FALSE, warning=FALSE, dpi=300, fig.align="center"}
+cm <-colMeans(house.scale)
+S <-cov(house.scale)
+d<-mahalanobis(house.scale,(cm),S)
+plot(qc<-qchisq((1:nrow(house.scale) -1/2) /nrow(house.scale), df =ncol(house.scale)), sd<-sort(d),xlab =expression(paste(chi[3]^2, " Quantile")), ylab ="Ordered distances", cex = .2)
+oups <- which(rank(abs(qc - sd), ties = "random") > nrow(house.scale)-70)
+text(qc[oups], sd[oups] - 1.5, names(oups),pos =  2, col = "blue")
+abline(a =0, b =1)
+abline(v=c(15:20), col="red")
+```
+
+We observe the distance do not lie normal on the chi-plot and hence the observations are not multivariate normally distributed. We exclude the observations having distance greater than 16, as we observe a deviation of distances in the chi-plot from quantile point 16. Hence, we proceed further excluding observations having distances greater than 16.
+
+```{r, message=FALSE, warning=FALSE}
+library(plyr)
+library(dplyr)
+m_dist <- mahalanobis(house.new, colMeans(house.new), cov(house.new))# getting m-dist
+house.new$MD <- round(m_dist, 2)# rounding off and md col 
+
+house.new$outlier <- "No"     #adding column for outlier
+house.new$outlier[house.new$MD > 16] <- "Yes"
+house.out <- house.new %>% filter(house.new$outlier=="No")  # filter out outliers
+dim(house.out)#dimension
+house.reqd <- house.out[,1:12]#final data set for further analysis
+
+```
+
+***
+
+We utilize the knowledge gained from this course to implement the PCA, Factor analysis for dimension reductions.
+
+###Principle Component Analysis
+
+In this section, we perform the PCA to reduce the number of variables in the data set while accounting for as much original variation in the data set as possible.
+
+```{r, message=FALSE, warning=FALSE}
+# principal component analysis
+house.pca<-princomp(house.reqd, cor = T)
+summary(house.pca, loadings = T)
+```
+
+We observe that the first 3 principle components captures 75 percent of variation in the dataset. Also, the first 3 PCs have standard deviaiton of greater than 1.
+Hence we consider the first 3 PCs.
+
+We can interpret the three principle components based on the direction and magnitude of loadings as follows:
+
+**First PC**
+```{r}
+house.pca$loadings[,1]
+```
+
+We observe that all the variables are in the same direction for PC1 and has more weightage for TotalBsmtSF, X1stFlrSF, GrLivArea, FullBath, TotRmsAbvGrd and GarageArea. Hence we can consider the PC1 to represent overall characteristics of the house. 
+
+PC1 - "Overall Feature"
+
+**Second PC**
+```{r}
+house.pca$loadings[,2]
+```
+
+We observe that PC2 gives more weightage to X2ndFlrSF in the same direction of PC1 and in opposite direction to BsmtFinSF1, TotalBsmtSF, X1stFlrSF and BsmtFullBath. Hence, we can consider this component to be describing the Second Floor area in contrast to the Basement and First Floor areas.
+
+PC2 - "Second Floor Feature"
+
+**Third PC**
+```{r}
+house.pca$loadings[,3]
+```
+
+We observe that PC3 gives more weightage to BsmtUndSF in the same direction of PC1 and in opposite direction to BsmtFinSF1, X2stFlrSF and BsmtFullBath. Hence, we can consider this component to be describing the Basement unfinished area in contrast to the finished basement area and Second Floor areas.
+
+PC3 - "Unfinished Basement area"
+
+**Bi-plot**
+
+Here we attempt to plot the bi-plot which represents the variables and observations on to a single plot of PC components.
+
+*(We make use of the pca3d package, which essentially is a shortcut to RGL graphics library and get the pca visualization done.)*
+
+```{r, warning=F, message=FALSE, dpi=300, fig.align="center", fig.width=9, fig.height=7}
+#2d representation
+library(pca3d)
+pca2d(house.pca, biplot=T, col="blue", radius = 0.3, title = "2D bi-plot")
+```
+
+As we have considered 3 PCs, we attempt for a 3 dimensional plot and interpret accordingly. (We here do not label the observartions as it would turn complete mess)
+
+```{r, results=FALSE}
+pca3d(house.pca, biplot = T, radius= 0.3, col="blue", axes.color = "black")
+snapshotPCA3d(file="3d.png")
+```
+
+From the above bi-plot we observe:
+
+1. BsmtFinSF1 and BsmtFullBath are closely correlated and hence have similar profiles.
+2. TotalBsmtSF and X1stFlrSF are closely and hence have similar profiles.
+3. FullBath, GrLivArea and TotRmsAbvGrd are correlated to each other in the same direction.
+4. We observe the BsmtUnfSF is oppositely correlated to BsmtFinSF, which was captured by the PC3 and we conclude that they have opposite profiles which is reasonable to understand as they represent unfinished and finished areas of the house.
+4. Further we observe nearly uncorrelated group of variables which are at 90 degrees to each other.
+
+*Note: We here are not interpreting anything about the observations and conclude only saying that points close to each other have similar scores on the PCs.*
+
+***
+
+###Exploratory Factor Analysis
+
+We perform the Exploratory factor analysis, as a dimension reduction technique and observe the latent variables of the housing dataset.
+
+```{r}
+# Scalling the data
+house.reqd.scale<-scale(house.reqd)
+# Factor analysis
+(house.fa <- factanal(house.scale, factors = 3))
+print(house.fa$loadings, cut= 0.5)
+```
+
+We observe from the cumulative variance of factors, we observe that the 3 factors captures 64 percent variance in the dataset.
+
+
+Further we observe that 3 factors were sufficient to explain the variability in the dataset. As we observe the factor loadings, we make notive of the following:
+
+1. Factor1 gives more weightage to the X2ndFlrSF, GrLivArea and TotRmsAbvGrd and may be considered to represent the latent variable "Above Grade rooms and 2nd floor area".
+2. Factor2 gives more weightage to the TotalBsmtSF and X1stFlrSF and may be considered to represent the latent variable "Basement and 1st floor area".
+3. Factor3 gives more weightage to the BsmtFinSF1 and BsmtFullBath in direction of PC1 and BsmtUnfSF in opposite direction and hence may be considered to represent the latent variable "Impact of finished area and Basement full bathrooms".
+
+***
+
+###Confirmatory factor analysis
+
+We perform the confirmatory analysis to confirm the similarity between restricted covariance matrix (obtained through factor analysis) and non-restricted covariance matrix (obtained from raw data).
+
+```{r, message=FALSE, warning=FALSE}
+#chouse<-(house.new[,-c(1,3,9,10,12)])
+chouse<-house.reqd
+library(sem)
+real_model <- specifyModel(file = "realestate_model1.txt")
+real_model
+opt <- options(fit.indices = c("GFI", "AGFI", "SRMR"))
+real_sem <- sem(real_model, cor(chouse), nrow(chouse)) #cor or cov same result.
+real_sem
+summary(real_sem)
+#MasVnrArea, BsmtFinSF1, BsmtUnfSF, BsmtFullBath, FullBath, BedroomAbvGr, GarageArea
+#MasVnrArea, BsmtUnfSF, FullBath, BedroomAbvGr, GarageArea
+```
+
+We attempted confirmatory factor analysis using both 2 and 3 factors. However, in both the cases the result is "coefficient covariances cannot be computed". 
+Here, R is unable to calculate the factor loadings to show the summary. Also we found lambda values more than one and theta values negative. So, it a bad model too.
+Hence, we can conclude that it is not possible to get the latent variables with every confirmatory factor analysis.  
+
+***
+
+###Clustering Analysis: K-means
+
+```{r, message=FALSE, warning=FALSE}
+# For K-means clustering scalling is important as it calcualtes the distance from centeroids so we will use scalled data
+
+#Within groups sum of squares
+plot.wgss = function(mydata, maxc) {
+wss = numeric(maxc)
+for (i in 1:maxc) wss[i] = kmeans(mydata,centers=i, nstart = 20)$tot.withinss 
+plot(1:maxc, wss, type="b", xlab="Number of Clusters",
+ylab="Within groups sum of squares", main="Scree Plot") }
+
+#Scree plot to decide the number of clusters
+plot.wgss(house.reqd.scale, 20)
+```
+*The scree plot analysis shows we should pick 5 clusters as per elbow test.* 
+
+```{r, fig.align="center"}
+#building k-means clusters
+km2 <- kmeans(house.reqd.scale, 5)
+
+
+# NOTE: We cannot plot Multivarite data on 2 axis so better to plot clusters on Principle components, using non scaled data set and cor=true.
+pca <- princomp(house.reqd,cor=T)
+pca$loadings[,1:3] # how you name pc1, pc2, and pc3?
+
+#plotting the clusters against the PC1 and PC2
+plot(pca$scores[, c(1:2)], pch = km2$cluster, col=km2$cluster, cex=1.5)
+abline(h=0,v=0)
+text(pca$scores[, c(1:2)],  labels = km2$cluster ,cex=0.5)
+```
+
+The 2D plot of PC1 scores and PC2 scores for our five clusters shows following:
+
++ Cluster 1:(black): Average houses having average surface area and basement features.
++ Cluster 2(Red): Shows more weight towards positives of PC2, so they are the houses having big basements finished surface area and baement full baths.
++ Cluster 3(Green): Shows big houses with high surface areas of both 1st and 2nd floors. 
++ Cluster 4(D.Blue): Houses having big 2nd floors areas.
++ Cluster 5(L.Blue): Houses having big 1st floor,basement and garage areas. 
+
+
+** 3D Representation plot of 3 Principal Components **
+```{r, warning=F, message=F, fig.align="center"}
+#3D plot to show all clusters mapped on 3 Principal components we created in the earlier section
+library("scatterplot3d")
+scatterplot3d(x=pca$scores[, 1],y=pca$scores[, 2],z=pca$scores[, 3], pch = km2$cluster, angle=60)
+```
+
+```{r, warning=F, message=F, results=F}
+
+# A better 3D Representation using 3D plot.
+#install.packages("plotly")
+library(plotly)
+scoresDF<-as.data.frame(pca$scores)         #hoverlabel = km2$cluster,
+plot_ly(scoresDF, x=~Comp.1, y=~Comp.2, z=~Comp.3, text = km2$cluster, color=km2$cluster ) %>% #(color range if required) colors = c('#BF382A', '#0C4B8E') 
+  add_markers() %>%
+  layout(scene = list(xaxis = list(title = 'PC1 Scores:Big Homes Single Story'),
+                     yaxis = list(title = 'PC2 Scores:Big 2 story houses'),
+                     zaxis = list(title = 'PC3 Scores:House with basement')))
+
+```
+
+The second 3D plot is an interactive plot, best visible when seen as html. Please check the attachment (html file) for this visualization). When hovering over an observation point on the 3d plot we can see the cluster it belongs to and what are the PC scores in three dimentions.The 5 clusters are color encoded as per legend on the plot. Further analysis of centeroids is explained in the next sections.
+
+
+```{r}
+#Centers of the clusters
+km2$centers
+```
+
+** Cluster Centroid Analysis **
+Based on the centers above we reach to the following conclusions:
+
++ Cluster 1: Houses having high, **basement** finished surface area.
++ Cluster 2: Houses having high, **second flour + big house** surface area.
++ Cluster 3: Houses having average, **basement surface areas garage and full baths**.
++ Cluster 4: Houses having small areas in all variable repreresntative of **small houses**.
++ Cluster 5: **Big houses have high quality** and higher percentage of finished area. 
+
+**Total houses in each cluster:**
+```{r}
+table(km2$cluster) # number of observations in a cluster
+```
+
+** Houses in a particular Cluster **
+To check the details about the houses in each cluster we can find the cluster data points.
+
+```{r}
+#One can check and trace back the house IDs which are in cluster 1. This may be  helpfull to further study the cluster with attributes which were not accounted for but were available exernally i.e. in master data.
+h <- subset(house.reqd.scale, km2$cluster ==1)
+head(h)
+```
+
+***
+
+###Predicitve Anlaysis: Regression
+
+Initially we consider all the variables of our considered dataset to perform linear regression to predict SalePrice of houses. Following we reconstruct our required dataset.
+
+```{r, message=FALSE, warning=FALSE}
+#data cleaning
+Housing<-read.csv("C:/Education/Multivariate Analysis/Project/Housing/Data/Full_Housing_New.csv")
+str(Housing)
+Housing<-Housing[,-c(1,2,13,16,17)]
+#head(Housing)
+#str(Housing)
+#sum(is.na(Housing))
+#sapply(Housing, function(x) sum(is.na(x)))# number of nas
+house.train<-Housing[1:1460,]
+str(house.train)
+house.test<-Housing[1461:2919,1:12]
+str(house.test)
+imp<-apply(house.train,2,mean,na.rm= T)
+house.reg<- house.train
+for(i in 1:ncol(house.train))
+{house.reg[is.na(house.reg[,i]),i]<-imp[i]
+}
+sapply(house.reg, function(x) sum(is.na(x)))#imputing nas with col means
+house.train<-house.reg
+```
+
+Now that we have obtained our required train and test data sets, we perform linear regression as follows:
+
+```{r, message=FALSE, warning=FALSE}
+library(MASS)
+model1<- lm(SalePrice ~ .,data = house.train )
+#model2 <- stepAIC(model1)
+summary(model1)
+```
+
+We use the above built model to predict the SalePrices in the test dataset.
+
+```{r}
+x <- predict(model1, house.test)
+summary(x)
+```
+
+We have submitted these results to the Kaggle Competition and obtained a score of 0.21 with a rank of 4525 on 04.24.2018.
+
+Following we perform the principle component regression, which provides us with reduced dimensions keeping most of the variability, avoids multicollinearity between the predictor variables and reduces the risk of overfitting.
+
+However, doing so the interpretation becomes difficult and also some deviation of accuracy from the complete model prediction.
+
+```{r}
+# creating dataset for predictions using pca
+p.house.new <- house.new
+a <- row.names(house.new[house.new$outlier=="Yes",])
+p.house.train <- house.train
+p.house.train[-c(as.numeric(a)),] -> p.house.train.new
+```
+
+We build the training dataset using the 3 PC scores and append the SalePrice variable.
+
+```{r}
+#Creating training dataset
+p.house.train.data <- data.frame(house.pca$scores[,1:3], SalePrice = p.house.train.new$SalePrice)
+```
+
+```{r}
+#Test dataset pca
+y <- predict(house.pca, newdata = house.test)
+```
+
+```{r}
+#PCR
+mf1 <- lm(SalePrice ~ ., data = p.house.train.data)
+summary(mf1)
+results <- predict(mf1, as.data.frame(y[,1:3]))
+```
+
+We have submitted these results to the Kaggle competition as well and obtained a score of 0.23 and rank 4585, which is lower than the complete linear regression model as expected, since our 3 principle components captured only 75 percent of variation in the data set.
+
+***
+
+
+###Future Work and Analysis
+
++ The clustering features show that we have distinct classes of houses in the market for sale. We can relate the prices of the houses sold with their classes to find further meaningful patterns. i.e., to answer questions like:
+
+  + Whether houses with big basement do get sold at above average price or lower price? 
+  
+  + What about the actual sale prices of houses having full baths in basements vs. without full baths?
+    
+  + Acquiring further information about the customers demographics would be helpful in understanding what cluster(type) would they prefer to purchase.
+
++ Extensive regression techniques may be utilized along with considering other variables in the original dataset to ensure accuracy in predictions of Houses Sale Price.
+
++ Inclusion of categorical variables (like Neighbourhood) in analysis would justify or contradict the outliers excluded.
+
+
+***
+
+###References
+
+**Dataset**
+
++ House prices advance regression techniques, Kaggle.com (https://www.kaggle.com/c/house-prices-advanced-regression-techniques)
+
+**Textbook**
+
++ https://ttu.blackboard.com/bbcswebdav/pid-3383258-dt-content-rid-25030997_1/courses/201857-ISQS-6350-001/An%20Introduction%20to%20Applied%20Multivariate%20Analysis-Everet.pdf
+
+**Outlier Analysis**
+
++ Outlier Detection with Mahalanobis Distance. (2016, December 08). Retrieved from https://www.r-bloggers.com/outlier-detection-with-mahalanobis-distance/
+
+**PCA and Factor Analysis**
+
++ Factor Analysis and Principal Components. (2002, May 07). Retrieved from https://www.sciencedirect.com/science/article/pii/S0047259X8571069X
+
++ Use of Exploratory Factor Analysis in Published Research. (n.d.). Retrieved from http://journals.sagepub.com/doi/abs/10.1177/0013164405282485
+
+**Multivariate Regression**
++ Manjula, R., Jain, S., Srivastava, S., & Kher, P. R. (2017). Real estate value prediction using multivariate regression models. IOP Conference Series: Materials Science and Engineering, 263, 042098. doi:10.1088/1757-899x/263/4/042098
+
+**Principle component regression**
+
++ Bansal, S., Dar, P., Jain, K., Jain, S., & Analytics Vidhya Content Team. (2016, July 27). Practical Guide to Principal Component Analysis (PCA) in R & Python. Retrieved from https://www.analyticsvidhya.com/blog/2016/03/practical-guide-principal-component-analysis-python/
+
++ Jolliffe, I. (1982). A Note on the Use of Principal Components in Regression. Journal of the Royal Statistical Society. Series C (Applied Statistics), 31(3), 300-303. doi:10.2307/2348005
+
+***
